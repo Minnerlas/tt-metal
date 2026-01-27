@@ -186,10 +186,10 @@ int main() {
         mesh_device->close();
 
         uint64_t bytes_read = *(uint64_t*)result_vec.data();
-        uint64_t duration = duration_cast<std::chrono::microseconds>(stop - start).count();
+        double duration = duration_cast<std::chrono::nanoseconds>(stop - start).count() / 1e9;
 
-        fmt::print("result_vec[0] = {} in {}us\n", bytes_read, duration);
-        fmt::print("{}MB/s\n", (bytes_read / 1e6) / (duration / 1e6));
+        fmt::print("result_vec[0] = {} in {}s\n", bytes_read, duration);
+        fmt::print("{}MB/s\n", (bytes_read / 1e6) / duration);
 
     } catch (const std::exception& e) {
         fmt::print(stderr, "Test failed with exception! what: {}\n", e.what());
