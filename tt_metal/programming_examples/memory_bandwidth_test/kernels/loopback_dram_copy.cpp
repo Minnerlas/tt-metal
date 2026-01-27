@@ -6,25 +6,20 @@
 
 #include "api/debug/dprint.h"
 
-void kernel_main() {
-    // Read parameters from the kernel arguments
-    std::uint32_t l1_buffer_addr = get_arg_val<uint32_t>(0);
+static void read_from_dram(uint64_t* total, uint32_t dram_addr, uint32_t l1_addr, uint32_t sz) {
+    noc_async_read(dram_addr, l1_addr, sz);
+    *total += sz;
+}
 
-    // Address and the DRAM bank ID of the source buffer
-    std::uint32_t dram_buffer_src_addr = get_arg_val<uint32_t>(1);
-
-    // Address and the DRAM bank ID of the destination buffer
-    std::uint32_t dram_buffer_dst_addr = get_arg_val<uint32_t>(2);
-
-    // Size of the buffer in bytes
-    std::uint32_t num_tiles = get_arg_val<uint32_t>(3);
-
-    // Read parameters from the kernel arguments
-    std::uint32_t l1_buffer1_addr = get_arg_val<uint32_t>(4);
-
-    // Read parameters from the kernel arguments
-    std::uint32_t l1_buffer2_addr = get_arg_val<uint32_t>(5);
-
+static void mmain(
+    uint32_t l1_buffer_addr,
+    uint32_t dram_buffer_src_addr,
+    uint32_t dram_buffer_dst_addr,
+    uint32_t num_tiles,
+    uint32_t l1_buffer1_addr,
+    uint32_t l1_buffer2_addr) {
+    // Arbitrary DRAM addresses
+    // noc_addr_2 should be on a separate channel
     uint64_t noc_addr_1 = get_noc_addr_from_bank_id<true>(0, 0x1000);
     uint64_t noc_addr_2 = get_noc_addr_from_bank_id<true>(0, 0x1000 + (2 << 30));
 
@@ -52,24 +47,10 @@ void kernel_main() {
             // noc_async_read_tile(i, in0, l1_buffer_addr);
             // readbytes += tile_size_bytes;
 
-            // noc_async_read_tile(i, in1, l1_buffer1_addr);
-            // readbytes += tile_size_bytes;
-
-            // noc_async_read_tile(i, in2, l1_buffer2_addr);
-            // readbytes += tile_size_bytes;
-
-            noc_async_read(noc_addr_1, l1_buffer1_addr, tile_size_bytes);
-            readbytes += tile_size_bytes;
-
-            noc_async_read(noc_addr_2, l1_buffer2_addr, tile_size_bytes);
-            readbytes += tile_size_bytes;
+            read_from_dram(&readbytes, noc_addr_1, l1_buffer1_addr, tile_size_bytes);
+            read_from_dram(&readbytes, noc_addr_2, l1_buffer2_addr, tile_size_bytes);
 
             noc_async_read_barrier();
-            // Write back the tile to the destination DRAM buffer.  Again, this is
-            // an asynchronous operation, so we need a barrier to ensure the write
-            // is complete before the next iteration.
-            // noc_async_write_tile(i, out0, l1_buffer_addr);
-            // noc_async_write_barrier();
         }
     }
 
@@ -79,4 +60,25 @@ void kernel_main() {
     noc_async_write_barrier();
 
     DPRINT << "Read " << readbytes << " from dram\n";  // << ENDL();
+}
+
+void kernel_main() {
+    mmain(
+        // Read parameters from the kernel arguments
+        get_arg_val<uint32_t>(0),
+
+        // Address and the DRAM bank ID of the source buffer
+        get_arg_val<uint32_t>(1),
+
+        // Address and the DRAM bank ID of the destination buffer
+        get_arg_val<uint32_t>(2),
+
+        // Size of the buffer in bytes
+        get_arg_val<uint32_t>(3),
+
+        // Read parameters from the kernel arguments
+        get_arg_val<uint32_t>(4),
+
+        // Read parameters from the kernel arguments
+        get_arg_val<uint32_t>(5));
 }
