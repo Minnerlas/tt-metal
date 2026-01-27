@@ -21,6 +21,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/hello_world_compute_kernel)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/hello_world_datamovement_kernel)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/hello_world_datatypes_kernel)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/loopback)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/memory_bandwidth_test)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/matmul)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/pad_multi_core)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/shard_data_rm)
@@ -48,6 +49,7 @@ install(
         hello_world_datamovement_kernel
         hello_world_datatypes_kernel
         loopback
+        memory_bandwidth_test
         matmul
         shard_data_rm
         NoC_tile_transfer
@@ -76,6 +78,7 @@ install(
         hello_world_datamovement_kernel
         hello_world_datatypes_kernel
         loopback
+        memory_bandwidth_test
         matmul
         shard_data_rm
         NoC_tile_transfer
