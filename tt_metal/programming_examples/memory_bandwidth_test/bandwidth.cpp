@@ -2,9 +2,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#include <fmt/ostream.h>
-#include <cstdint>
+#include <chrono>
 #include <random>
+#include <cstdint>
+
+#include <fmt/ostream.h>
 #include <tt-metalium/host_api.hpp>
 #include <tt-metalium/device.hpp>
 #include <tt-metalium/distributed.hpp>
@@ -28,8 +30,6 @@ using namespace tt::tt_metal;
 #define OVERRIDE_KERNEL_PREFIX ""
 #endif
 int main() {
-    bool pass = true;
-
     try {
         // Create a 1x1 mesh on device 0 (same API scales to multi-device
         // meshes)
@@ -43,7 +43,7 @@ int main() {
         // Data on Tensix is stored in tiles. A tile is a 2D array of (usually)
         // 32x32 values. And the Tensix uses BFloat16 as the most well
         // supported data type. Thus the tile size is 32x32x2 = 2048 bytes.
-        constexpr uint32_t num_tiles = 50;
+        constexpr uint32_t num_tiles = 5000;
         constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT;
         constexpr uint32_t tile_size_bytes = sizeof(bfloat16) * elements_per_tile;
         constexpr uint32_t dram_buffer_size = tile_size_bytes * num_tiles;
@@ -57,6 +57,7 @@ int main() {
             // Type of buffer (DRAM or L1(SRAM))
             .buffer_type = tt::tt_metal::BufferType::DRAM,
         };
+
         distributed::DeviceLocalBufferConfig l1_config{
             .page_size = tile_size_bytes,
             // This time we allocate on L1
@@ -76,6 +77,8 @@ int main() {
         // Allocate the buffers (replicated across mesh;
         // on unit mesh ⇒ single device allocation)
         auto l1_buffer = distributed::MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get());
+        auto l1_buffer1 = distributed::MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get());
+        auto l1_buffer2 = distributed::MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get());
 
         auto input_dram_buffer = distributed::MeshBuffer::create(dram_buffer_config, dram_config, mesh_device.get());
 
@@ -145,6 +148,8 @@ int main() {
             input_dram_buffer->address(),
             output_dram_buffer->address(),
             num_tiles,
+            l1_buffer1->address(),
+            l1_buffer2->address(),
         };
 
         SetRuntimeArgs(program, dram_copy_kernel_id, core, runtime_args);
@@ -153,8 +158,10 @@ int main() {
         workload.add_program(device_range, std::move(program));
         // Enqueue the workload for execution on the mesh (non-blocking) and
         // wait for completion before reading back.
+        auto start = std::chrono::high_resolution_clock::now();
         distributed::EnqueueMeshWorkload(cq, workload, /*blocking=*/false);
         distributed::Finish(cq);
+        auto stop = std::chrono::high_resolution_clock::now();
         // NOTE: The above is equivalent to a blocking enqueue of the workload.
 
         // Read the result back from the shard at mesh coordinate {0,0}. Use
@@ -175,27 +182,18 @@ int main() {
             result_vec.size(),
             input_vec.size());
 
-        for (int i = 0; i < input_vec.size(); i++) {
-            if (input_vec[i] != result_vec[i]) {
-                pass = false;
-                break;
-            }
-        }
-
         // Close the device
-        if (!mesh_device->close()) {
-            pass = false;
-        }
+        mesh_device->close();
+
+        uint64_t bytes_read = *(uint64_t*)result_vec.data();
+        uint64_t duration = duration_cast<std::chrono::microseconds>(stop - start).count();
+
+        fmt::print("result_vec[0] = {} in {}us\n", bytes_read, duration);
+        fmt::print("{}MB/s\n", (bytes_read / 1e6) / (duration / 1e6));
 
     } catch (const std::exception& e) {
         fmt::print(stderr, "Test failed with exception! what: {}\n", e.what());
         throw;
-    }
-
-    if (pass) {
-        fmt::print("Test Passed\n");
-    } else {
-        TT_THROW("Test Failed");
     }
 
     return 0;
