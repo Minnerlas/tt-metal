@@ -35,23 +35,23 @@ int main() {
         // Create a 1x1 mesh on device 0 (same API scales to multi-device
         // meshes)
         constexpr int device_id = 0;
-        std::shared_ptr<distributed::MeshDevice> mesh_device = distributed::MeshDevice::create_unit_mesh(device_id);
+        std::shared_ptr<MeshDevice> mesh_device = MeshDevice::create_unit_mesh(device_id);
 
         // Submit work via the mesh command queue: uploads/downloads and
         // program execution.
-        distributed::MeshCommandQueue& cq = mesh_device->mesh_command_queue();
+        MeshCommandQueue& cq = mesh_device->mesh_command_queue();
 
         // Data on Tensix is stored in tiles. A tile is a 2D array of (usually)
         // 32x32 values. And the Tensix uses BFloat16 as the most well
         // supported data type. Thus the tile size is 32x32x2 = 2048 bytes.
-        constexpr uint32_t num_tiles = 1000;
+        constexpr uint32_t num_tiles = 2000;
         constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT;
         constexpr uint32_t tile_size_bytes = sizeof(uint32_t) * elements_per_tile;
         constexpr uint32_t dram_buffer_size = tile_size_bytes * num_tiles;
 
         // Configure mesh buffers. Use single-tile page size so transfers
         // operate tile-by-tile.
-        distributed::DeviceLocalBufferConfig dram_config{
+        DeviceLocalBufferConfig dram_config{
             // Number of bytes when round-robin between banks. Usually this is
             // the same as the tile size for efficiency.
             .page_size = tile_size_bytes,
@@ -59,35 +59,35 @@ int main() {
             .buffer_type = tt::tt_metal::BufferType::DRAM,
         };
 
-        distributed::DeviceLocalBufferConfig l1_config{
+        DeviceLocalBufferConfig l1_config{
             .page_size = tile_size_bytes,
             // This time we allocate on L1
             .buffer_type = tt::tt_metal::BufferType::L1,
         };
 
-        distributed::ReplicatedBufferConfig dram_buffer_config{
+        ReplicatedBufferConfig dram_buffer_config{
             // Size per device (replicated across mesh). Since we are
             // operating on a unit mesh this is the total size.
             .size = dram_buffer_size,
         };
 
-        distributed::ReplicatedBufferConfig l1_buffer_config{
+        ReplicatedBufferConfig l1_buffer_config{
             .size = tile_size_bytes,
         };
 
         // Allocate the buffers (replicated across mesh;
         // on unit mesh ⇒ single device allocation)
-        auto l1_buffer = distributed::MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get());
-        std::vector<std::shared_ptr<distributed::MeshBuffer>> l1_buffers = {};
+        auto l1_buffer = MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get());
+        std::vector<std::shared_ptr<MeshBuffer>> l1_buffers = {};
 
         const uint32_t num_l1_buffers = 128;
         for (int i = 0; i < num_l1_buffers; i++) {
-            l1_buffers.push_back(distributed::MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get()));
+            l1_buffers.push_back(MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get()));
         }
 
-        auto input_dram_buffer = distributed::MeshBuffer::create(dram_buffer_config, dram_config, mesh_device.get());
+        auto input_dram_buffer = MeshBuffer::create(dram_buffer_config, dram_config, mesh_device.get());
 
-        auto output_dram_buffer = distributed::MeshBuffer::create(dram_buffer_config, dram_config, mesh_device.get());
+        auto output_dram_buffer = MeshBuffer::create(dram_buffer_config, dram_config, mesh_device.get());
 
         // A program is a collection of kernels. Note that unlike OpenCL/CUDA
         // where every core must run the same kernel at a given time. Metalium
@@ -98,8 +98,8 @@ int main() {
         // A MeshWorkload is a collection of programs that will be executed on
         // the mesh. Each workload is local to a single device. Here we create
         // a workload for our single-device mesh.
-        distributed::MeshWorkload workload;
-        distributed::MeshCoordinateRange device_range = distributed::MeshCoordinateRange(mesh_device->shape());
+        MeshWorkload workload;
+        MeshCoordinateRange device_range = MeshCoordinateRange(mesh_device->shape());
 
         // This example program will only use 1 Tensix core. So we set the core
         // to {0, 0} (the most top-left core).
@@ -145,12 +145,13 @@ int main() {
         // upload is in progress. Note that the host is responsible for
         // ensuring that the upload is complete before the memory holding the
         // data is freed.
-        distributed::EnqueueWriteMeshBuffer(
+        EnqueueWriteMeshBuffer(
             cq,
             input_dram_buffer,
             input_vec,
             /*blocking=*/false);
 
+        const uint32_t kernel_id = 0;
         // Set runtime arguments for the kernel.
         std::vector<uint32_t> runtime_args = {
             l1_buffer->address(),
@@ -158,6 +159,7 @@ int main() {
             output_dram_buffer->address(),
             num_tiles,
             num_l1_buffers,
+            kernel_id,
         };
 
         SetRuntimeArgs(program, dram_copy_kernel_id, core, runtime_args);
@@ -193,12 +195,13 @@ int main() {
         // Close the device
         mesh_device->close();
 
+        const uint64_t GB = 1 << 30;
         const uint64_t MB = 1 << 20;
-        uint64_t bytes_read = *(uint64_t*)result_vec.data();
+        uint64_t bytes_read = (uint64_t)result_vec[0] + ((uint64_t)result_vec[1] << 32);
         double duration = duration_cast<std::chrono::nanoseconds>(stop - start).count() / 1e9;
 
         fmt::print(" {}MB bytes read in {:.5f}s\n", bytes_read / (float)MB, duration);
-        fmt::print("{:.3f}MB/s\n", (bytes_read / 1e6) / duration);
+        fmt::print("{:.4f}GB/s\n", (bytes_read / (float)GB) / duration);
 
     } catch (const std::exception& e) {
         fmt::print(stderr, "Test failed with exception! what: {}\n", e.what());

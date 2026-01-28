@@ -18,24 +18,27 @@ static void mmain(
     uint32_t dram_buffer_src_addr,
     uint32_t dram_buffer_dst_addr,
     uint32_t num_tiles,
-    uint32_t num_l1_buffers) {
+    uint32_t num_l1_buffers,
+    uint32_t kernel_id) {
     // Arbitrary DRAM addresses
     // noc_addr_2 should be on a separate channel
     uint64_t noc_addrs[num_l1_buffers] = {0};
     uint64_t l1_addrs[num_l1_buffers] = {0};
+    uint32_t dram_bank = kernel_id;
 
     for (unsigned i = 0; i < num_l1_buffers; i++) {
-        // noc_addrs[i] = get_noc_addr_from_bank_id<true>(0, i * tile_size_bytes);
-        const uint64_t channel2_offset = 2 << 30;  // 2GB
-        uint64_t dram_addr = i * tile_size_bytes + (i & 1 ? channel2_offset : 0);
-        noc_addrs[i] = get_noc_addr_from_bank_id<true>(0, dram_addr);
+        noc_addrs[i] = get_noc_addr_from_bank_id<true>(0, i * tile_size_bytes);
+        //
+        // const uint64_t channel2_offset = 2 << 30;  // 2GB
+        // uint64_t dram_addr = i * tile_size_bytes + (i & 1 ? channel2_offset : 0);
+        // noc_addrs[i] = get_noc_addr_from_bank_id<true>(dram_bank, dram_addr);
     }
 
     constexpr auto in0_args = TensorAccessorArgs<0>();
     const auto in0 = TensorAccessor(in0_args, dram_buffer_src_addr, tile_size_bytes);
 
-    const auto in1 = TensorAccessor(in0_args, noc_addrs[0], tile_size_bytes);
-    const auto in2 = TensorAccessor(in0_args, noc_addrs[1], tile_size_bytes);
+    // const auto in1 = TensorAccessor(in0_args, noc_addrs[0], tile_size_bytes);
+    // const auto in2 = TensorAccessor(in0_args, noc_addrs[1], tile_size_bytes);
 
     constexpr auto out0_args = TensorAccessorArgs<in0_args.next_compile_time_args_offset()>();
     const auto out0 = TensorAccessor(out0_args, dram_buffer_dst_addr, tile_size_bytes);
@@ -59,7 +62,7 @@ static void mmain(
         }
     }
 
-    *(uint64_t*)l1_buffer_addr = readbytes;
+    ((uint64_t*)l1_buffer_addr)[kernel_id] = readbytes;
 
     noc_async_write_tile(0, out0, l1_buffer_addr);
     noc_async_write_barrier();
@@ -81,6 +84,9 @@ void kernel_main() {
         // Size of the buffer in bytes
         get_arg_val<uint32_t>(3),
 
-        // Read parameters from the kernel arguments
-        get_arg_val<uint32_t>(4));
+        // Number of L1 buffers
+        get_arg_val<uint32_t>(4),
+
+        // Kernel ID
+        get_arg_val<uint32_t>(5));
 }
