@@ -26,6 +26,7 @@
 // 7. Clean up the device. Exit
 
 using namespace tt::tt_metal;
+using namespace tt::tt_metal::distributed;
 #ifndef OVERRIDE_KERNEL_PREFIX
 #define OVERRIDE_KERNEL_PREFIX ""
 #endif
@@ -43,9 +44,9 @@ int main() {
         // Data on Tensix is stored in tiles. A tile is a 2D array of (usually)
         // 32x32 values. And the Tensix uses BFloat16 as the most well
         // supported data type. Thus the tile size is 32x32x2 = 2048 bytes.
-        constexpr uint32_t num_tiles = 5000;
+        constexpr uint32_t num_tiles = 1000;
         constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT;
-        constexpr uint32_t tile_size_bytes = sizeof(bfloat16) * elements_per_tile;
+        constexpr uint32_t tile_size_bytes = sizeof(uint32_t) * elements_per_tile;
         constexpr uint32_t dram_buffer_size = tile_size_bytes * num_tiles;
 
         // Configure mesh buffers. Use single-tile page size so transfers
@@ -77,8 +78,12 @@ int main() {
         // Allocate the buffers (replicated across mesh;
         // on unit mesh ⇒ single device allocation)
         auto l1_buffer = distributed::MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get());
-        auto l1_buffer1 = distributed::MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get());
-        auto l1_buffer2 = distributed::MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get());
+        std::vector<std::shared_ptr<distributed::MeshBuffer>> l1_buffers = {};
+
+        const uint32_t num_l1_buffers = 128;
+        for (int i = 0; i < num_l1_buffers; i++) {
+            l1_buffers.push_back(distributed::MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get()));
+        }
 
         auto input_dram_buffer = distributed::MeshBuffer::create(dram_buffer_config, dram_config, mesh_device.get());
 
@@ -121,11 +126,15 @@ int main() {
             });
 
         // Initialize the input buffer with random data.
-        std::vector<bfloat16> input_vec(elements_per_tile * num_tiles);
+        std::vector<uint32_t> input_vec(elements_per_tile * num_tiles);
         std::mt19937 rng(std::random_device{}());
         std::uniform_real_distribution<float> distribution(0.0f, 100.0f);
         for (auto& val : input_vec) {
             val = bfloat16(distribution(rng));
+        }
+
+        for (int i = 0; i < l1_buffers.size(); i++) {
+            input_vec[i] = l1_buffers[i]->address();
         }
 
         // Upload the data from host to the device. The final argument is set
@@ -143,13 +152,12 @@ int main() {
             /*blocking=*/false);
 
         // Set runtime arguments for the kernel.
-        const std::vector<uint32_t> runtime_args = {
+        std::vector<uint32_t> runtime_args = {
             l1_buffer->address(),
             input_dram_buffer->address(),
             output_dram_buffer->address(),
             num_tiles,
-            l1_buffer1->address(),
-            l1_buffer2->address(),
+            num_l1_buffers,
         };
 
         SetRuntimeArgs(program, dram_copy_kernel_id, core, runtime_args);
@@ -167,7 +175,7 @@ int main() {
         // Read the result back from the shard at mesh coordinate {0,0}. Use
         // blocking=true to wait for completion.  The vector is automatically
         // resized to fit the data.
-        std::vector<bfloat16> result_vec;
+        std::vector<uint32_t> result_vec;
         distributed::EnqueueReadMeshBuffer(
             cq,
             result_vec,
@@ -185,11 +193,12 @@ int main() {
         // Close the device
         mesh_device->close();
 
+        const uint64_t MB = 1 << 20;
         uint64_t bytes_read = *(uint64_t*)result_vec.data();
         double duration = duration_cast<std::chrono::nanoseconds>(stop - start).count() / 1e9;
 
-        fmt::print("result_vec[0] = {} in {}s\n", bytes_read, duration);
-        fmt::print("{}MB/s\n", (bytes_read / 1e6) / duration);
+        fmt::print(" {}MB bytes read in {:.5f}s\n", bytes_read / (float)MB, duration);
+        fmt::print("{:.3f}MB/s\n", (bytes_read / 1e6) / duration);
 
     } catch (const std::exception& e) {
         fmt::print(stderr, "Test failed with exception! what: {}\n", e.what());
