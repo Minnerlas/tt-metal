@@ -19,6 +19,7 @@ static void mmain(
     uint32_t dram_buffer_dst_addr,
     uint32_t num_tiles,
     uint32_t num_l1_buffers,
+    uint32_t num_iter,
     uint32_t kernel_id) {
     // Arbitrary DRAM addresses
     // noc_addr_2 should be on a separate channel
@@ -52,7 +53,7 @@ static void mmain(
         // DPRINT << "Read " << l1_addrs[i] << " from dram\n" << ENDL();
     }
 
-    for (uint32_t j = 0; j < 1000; j++) {
+    for (uint32_t j = 0; j < num_iter; j++) {
         for (uint32_t i = 0; i < num_tiles; i++) {
             for (uint32_t i = 0; i < num_l1_buffers; i++) {
                 read_from_dram(&readbytes, noc_addrs[i], l1_addrs[i], tile_size_bytes);
@@ -67,7 +68,7 @@ static void mmain(
     noc_async_write_tile(0, out0, l1_buffer_addr);
     noc_async_write_barrier();
 
-    DPRINT << "Read " << readbytes << " from dram\n";  // << ENDL();
+    DPRINT << "Read " << readbytes << " from dram in " << num_iter << " iterations\n";  // << ENDL();
 }
 
 void kernel_main() {
@@ -87,6 +88,9 @@ void kernel_main() {
         // Number of L1 buffers
         get_arg_val<uint32_t>(4),
 
+        // Number of loop iterations
+        get_arg_val<uint32_t>(5),
+
         // Kernel ID
-        get_arg_val<uint32_t>(5));
+        get_arg_val<uint32_t>(6));
 }

@@ -44,6 +44,7 @@ int main() {
         // Data on Tensix is stored in tiles. A tile is a 2D array of (usually)
         // 32x32 values. And the Tensix uses BFloat16 as the most well
         // supported data type. Thus the tile size is 32x32x2 = 2048 bytes.
+        constexpr uint32_t num_iter = 2000;
         constexpr uint32_t num_tiles = 2000;
         constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT;
         constexpr uint32_t tile_size_bytes = sizeof(uint32_t) * elements_per_tile;
@@ -159,6 +160,7 @@ int main() {
             output_dram_buffer->address(),
             num_tiles,
             num_l1_buffers,
+            num_iter,
             kernel_id,
         };
 
