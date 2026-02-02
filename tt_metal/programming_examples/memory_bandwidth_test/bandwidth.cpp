@@ -44,9 +44,11 @@ int main() {
         // Data on Tensix is stored in tiles. A tile is a 2D array of (usually)
         // 32x32 values. And the Tensix uses BFloat16 as the most well
         // supported data type. Thus the tile size is 32x32x2 = 2048 bytes.
-        constexpr uint32_t num_iter = 2000;
+        const uint64_t num_dram_channels = 8;
+        const uint32_t num_l1_buffers = 256 / 4;
+        constexpr uint32_t num_iter = 2048 / 8;
         constexpr uint32_t num_tiles = 2000;
-        constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT;
+        constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT * 4;
         constexpr uint32_t tile_size_bytes = sizeof(uint32_t) * elements_per_tile;
         constexpr uint32_t dram_buffer_size = tile_size_bytes * num_tiles;
 
@@ -81,7 +83,6 @@ int main() {
         auto l1_buffer = MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get());
         std::vector<std::shared_ptr<MeshBuffer>> l1_buffers = {};
 
-        const uint32_t num_l1_buffers = 128;
         for (int i = 0; i < num_l1_buffers; i++) {
             l1_buffers.push_back(MeshBuffer::create(l1_buffer_config, l1_config, mesh_device.get()));
         }
@@ -104,7 +105,21 @@ int main() {
 
         // This example program will only use 1 Tensix core. So we set the core
         // to {0, 0} (the most top-left core).
-        constexpr CoreCoord core = {0, 0};
+        // constexpr CoreCoord core = {0, 0};
+        auto corelist = std::vector<CoreCoord>{
+            {0, 0},
+            {0, 3},
+            {0, 6},
+            {0, 9},
+            {11, 0},
+            {11, 3},
+            {11, 6},
+            {11, 9},
+        };
+        if (num_dram_channels > corelist.size()) {
+            exit(1);
+        }
+        auto cores = CoreRangeSet(std::span(corelist.data(), num_dram_channels));
 
         // Create the data movement kernel. This kernel will be used to copy
         // data from DRAM to DRAM (see the `loopback_dram_copy.cpp` file for
@@ -119,7 +134,7 @@ int main() {
         KernelHandle dram_copy_kernel_id = CreateKernel(
             program,
             OVERRIDE_KERNEL_PREFIX "memory_bandwidth_test/kernels/loopback_dram_copy.cpp",
-            core,
+            cores,
             DataMovementConfig{
                 .processor = DataMovementProcessor::RISCV_0,
                 .noc = NOC::RISCV_0_default,
@@ -152,19 +167,21 @@ int main() {
             input_vec,
             /*blocking=*/false);
 
-        const uint32_t kernel_id = 0;
-        // Set runtime arguments for the kernel.
-        std::vector<uint32_t> runtime_args = {
-            l1_buffer->address(),
-            input_dram_buffer->address(),
-            output_dram_buffer->address(),
-            num_tiles,
-            num_l1_buffers,
-            num_iter,
-            kernel_id,
-        };
+        for (uint32_t kernel_id = 0; kernel_id < num_dram_channels; kernel_id++) {
+            // Set runtime arguments for the kernel.
+            std::vector<uint32_t> runtime_args = {
+                l1_buffer->address(),
+                input_dram_buffer->address(),
+                output_dram_buffer->address(),
+                num_tiles,
+                num_l1_buffers,
+                num_iter,
+                tile_size_bytes,
+                kernel_id,
+            };
 
-        SetRuntimeArgs(program, dram_copy_kernel_id, core, runtime_args);
+            SetRuntimeArgs(program, dram_copy_kernel_id, corelist[kernel_id], runtime_args);
+        }
 
         // Add the program to the workload for the mesh.
         workload.add_program(device_range, std::move(program));
@@ -197,13 +214,14 @@ int main() {
         // Close the device
         mesh_device->close();
 
-        const uint64_t GB = 1 << 30;
-        const uint64_t MB = 1 << 20;
-        uint64_t bytes_read = (uint64_t)result_vec[0] + ((uint64_t)result_vec[1] << 32);
+        const uint64_t GiB = 1 << 30;
+        const uint64_t MiB = 1 << 20;
+        uint64_t bytes_read = num_dram_channels == 1
+                                  ? result_vec[0] + ((uint64_t)result_vec[1] << 32)
+                                  : num_dram_channels * num_iter * num_l1_buffers * num_tiles * tile_size_bytes;
         double duration = duration_cast<std::chrono::nanoseconds>(stop - start).count() / 1e9;
-
-        fmt::print(" {}MB bytes read in {:.5f}s\n", bytes_read / (float)MB, duration);
-        fmt::print("{:.4f}GB/s\n", (bytes_read / (float)GB) / duration);
+        fmt::print(" {} MiB bytes read in {:.5f}s\n", bytes_read / (float)MiB, duration);
+        fmt::print("{:.4f} GiB/s\n", bytes_read / duration / GiB);
 
     } catch (const std::exception& e) {
         fmt::print(stderr, "Test failed with exception! what: {}\n", e.what());
