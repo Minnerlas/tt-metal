@@ -38,15 +38,15 @@ static void mmain(
     uint32_t dram_bank = kernel_id;
 
     for (unsigned i = 0; i < num_l1_buffers; i++) {
-        uint64_t base = i & 1 ? 0 : 2ULL << 30;
+        uint64_t base = 0;  // i & 1 ? 0 : 2ULL << 30;
+        uint64_t addr = i * tile_size_bytes + base;
 
-        uint32_t controller = kernel_id;
-        //   kernel_id == 0 ? 2
-        // : kernel_id == 1 ? 3
-        // : 4;
-        uint64_t addr = i * 0x1000 + base;
+        // int x = 0;
+        // int y = kernel_id == 0 ? 2 : 9;
+        // noc_addrs[i] = get_noc_addr(x, y, addr);
+
         int noc = 0;  // kernel_id == 2 ? 1 : 0;
-
+        uint32_t controller = kernel_id;
         noc_addrs[i] = get_noc_addr_from_bank_id<true>(controller, addr, noc);
         //
         // const uint64_t channel2_offset = 2 << 30;  // 2GB

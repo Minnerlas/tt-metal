@@ -31,6 +31,8 @@ using namespace tt::tt_metal::distributed;
 #define OVERRIDE_KERNEL_PREFIX ""
 #endif
 int main() {
+    const uint64_t GiB = 1 << 30;
+    const uint64_t MiB = 1 << 20;
     try {
         // Create a 1x1 mesh on device 0 (same API scales to multi-device
         // meshes)
@@ -41,14 +43,12 @@ int main() {
         // program execution.
         MeshCommandQueue& cq = mesh_device->mesh_command_queue();
 
-        // Data on Tensix is stored in tiles. A tile is a 2D array of (usually)
-        // 32x32 values. And the Tensix uses BFloat16 as the most well
-        // supported data type. Thus the tile size is 32x32x2 = 2048 bytes.
         const uint64_t num_dram_channels = 8;
-        const uint32_t num_l1_buffers = 256 / 4;
-        constexpr uint32_t num_iter = 2048 / 8;
-        constexpr uint32_t num_tiles = 2000;
-        constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT * 4;
+        const uint32_t num_l1_buffers = 2;  // 256 / 8;
+        constexpr uint32_t num_iter = 1024 / 8;
+        constexpr uint32_t num_tiles = 1024;
+        constexpr uint32_t elements_per_tile = MiB / 4 / sizeof(uint32_t);
+        // constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT * 8;
         constexpr uint32_t tile_size_bytes = sizeof(uint32_t) * elements_per_tile;
         constexpr uint32_t dram_buffer_size = tile_size_bytes * num_tiles;
 
@@ -106,20 +106,24 @@ int main() {
         // This example program will only use 1 Tensix core. So we set the core
         // to {0, 0} (the most top-left core).
         // constexpr CoreCoord core = {0, 0};
-        auto corelist = std::vector<CoreCoord>{
-            {0, 0},
-            {0, 3},
-            {0, 6},
-            {0, 9},
-            {11, 0},
-            {11, 3},
-            {11, 6},
-            {11, 9},
-        };
+        auto corelist = mesh_device->get_optimal_dram_bank_to_logical_worker_assignment(NOC::NOC_0);
+        // auto corelist = std::vector<CoreCoord>{
+        //     {0, 1},
+        //     {0, 4},
+        //     {0, 6},
+        //     {0, 9},
+        //     {11, 0},
+        //     {11, 3},
+        //     {11, 6},
+        //     {11, 9},
+        // };
         if (num_dram_channels > corelist.size()) {
             exit(1);
         }
         auto cores = CoreRangeSet(std::span(corelist.data(), num_dram_channels));
+
+        auto drams = mesh_device->get_optimal_dram_bank_to_logical_worker_assignment(NOC::NOC_0);
+        fmt::print("{}\n", drams);
 
         // Create the data movement kernel. This kernel will be used to copy
         // data from DRAM to DRAM (see the `loopback_dram_copy.cpp` file for
@@ -214,8 +218,6 @@ int main() {
         // Close the device
         mesh_device->close();
 
-        const uint64_t GiB = 1 << 30;
-        const uint64_t MiB = 1 << 20;
         uint64_t bytes_read = num_dram_channels == 1
                                   ? result_vec[0] + ((uint64_t)result_vec[1] << 32)
                                   : num_dram_channels * num_iter * num_l1_buffers * num_tiles * tile_size_bytes;
