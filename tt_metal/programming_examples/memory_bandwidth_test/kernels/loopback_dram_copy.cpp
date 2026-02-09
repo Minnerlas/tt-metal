@@ -81,16 +81,21 @@ static void mmain(
     uint64_t deltamss[NUM] = {0};
 
     for (uint32_t j = 0; j < num_iter; j++) {
+        DeviceZoneScopedN("OUTER_LOOP");
         for (uint32_t k = 0; k < num_tiles; k++) {
+            DeviceZoneScopedN("INNER_LOOP");
             for (uint32_t i = 0; i < num_l1_buffers; i++) {
                 read_from_dram(&readbytes, noc_addrs[i], l1_addrs[i], tile_size_bytes);
             }
 
-            uint64_t start = timestamp();
-            noc_async_read_barrier();
-            uint64_t deltams = timestamp() - start;
-            if (j < NUM) {
-                deltamss[j] = deltams;
+            {
+                DeviceZoneScopedN("SYNC");
+                uint64_t start = timestamp();
+                noc_async_read_barrier();
+                uint64_t deltams = timestamp() - start;
+                if (j < NUM) {
+                    deltamss[j] = deltams;
+                }
             }
 
             // if (j < 10)
@@ -101,20 +106,21 @@ static void mmain(
     // for (int i = 0; i < NUM; i++)
     // 	DPRINT << "read_from_dram " << deltamss[i] << ENDL();
 
+    uint64_t end = timestamp();
+
     ((uint64_t*)l1_buffer_addr)[kernel_id] = readbytes;
 
     noc_async_write_tile(0, out0, l1_buffer_addr);
     noc_async_write_barrier();
 
-    uint64_t end = timestamp();
-    uint64_t deltams = (end - start) / 1350000;
+    float deltams = (end - start) / 1350000.;
     float bandwidth = readbytes * 1000. / deltams;
     bandwidth /= 1 << 30;
 
     DPRINT << end << " kernel: " << kernel_id;
     DPRINT << " Read " << readbytes << " bytes from dram in " << num_iter;
     DPRINT << " iterations, took " << deltams << " ms";
-    DPRINT << " at bw: " << bandwidth << ENDL();
+    DPRINT << " at bw: " << bandwidth << " GB/s" << ENDL();
 }
 
 void kernel_main() {
