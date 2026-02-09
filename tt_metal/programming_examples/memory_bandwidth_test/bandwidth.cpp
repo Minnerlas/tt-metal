@@ -120,7 +120,8 @@ int main() {
         if (num_dram_channels > corelist.size()) {
             exit(1);
         }
-        auto cores = CoreRangeSet(std::span(corelist.data(), num_dram_channels));
+        auto corespan = std::span(corelist.data(), num_dram_channels);
+        auto cores = CoreRangeSet(corespan);
 
         auto drams = mesh_device->get_optimal_dram_bank_to_logical_worker_assignment(NOC::NOC_0);
         fmt::print("{}\n", drams);
@@ -171,7 +172,7 @@ int main() {
             input_vec,
             /*blocking=*/false);
 
-        for (uint32_t kernel_id = 0; kernel_id < num_dram_channels; kernel_id++) {
+        for (uint32_t kernel_id = 0; kernel_id < corespan.size(); kernel_id++) {
             // Set runtime arguments for the kernel.
             std::vector<uint32_t> runtime_args = {
                 l1_buffer->address(),
@@ -184,7 +185,7 @@ int main() {
                 kernel_id,
             };
 
-            SetRuntimeArgs(program, dram_copy_kernel_id, corelist[kernel_id], runtime_args);
+            SetRuntimeArgs(program, dram_copy_kernel_id, corespan[kernel_id], runtime_args);
         }
 
         // Add the program to the workload for the mesh.
@@ -218,9 +219,9 @@ int main() {
         // Close the device
         mesh_device->close();
 
-        uint64_t bytes_read = num_dram_channels == 1
+        uint64_t bytes_read = corespan.size() == 1
                                   ? result_vec[0] + ((uint64_t)result_vec[1] << 32)
-                                  : num_dram_channels * num_iter * num_l1_buffers * num_tiles * tile_size_bytes;
+                                  : corespan.size() * num_iter * num_l1_buffers * num_tiles * tile_size_bytes;
         double duration = duration_cast<std::chrono::nanoseconds>(stop - start).count() / 1e9;
         fmt::print(" {} MiB bytes read in {:.5f}s\n", bytes_read / (float)MiB, duration);
         fmt::print("{:.4f} GiB/s\n", bytes_read / duration / GiB);
