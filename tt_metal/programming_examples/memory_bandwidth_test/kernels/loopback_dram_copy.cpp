@@ -78,7 +78,7 @@ static void mmain(
     DPRINT << start << " starting kernel: " << kernel_id << ENDL();
 
 #define NUM 100
-    uint64_t deltas[NUM] = {0};
+    uint64_t deltamss[NUM] = {0};
 
     for (uint32_t j = 0; j < num_iter; j++) {
         for (uint32_t k = 0; k < num_tiles; k++) {
@@ -88,18 +88,18 @@ static void mmain(
 
             uint64_t start = timestamp();
             noc_async_read_barrier();
-            uint64_t delta = timestamp() - start;
+            uint64_t deltams = timestamp() - start;
             if (j < NUM) {
-                deltas[j] = delta;
+                deltamss[j] = deltams;
             }
 
             // if (j < 10)
-            // 	DPRINT << "read_from_dram " << delta << ENDL();
+            // 	DPRINT << "read_from_dram " << deltams << ENDL();
         }
     }
 
     // for (int i = 0; i < NUM; i++)
-    // 	DPRINT << "read_from_dram " << deltas[i] << ENDL();
+    // 	DPRINT << "read_from_dram " << deltamss[i] << ENDL();
 
     ((uint64_t*)l1_buffer_addr)[kernel_id] = readbytes;
 
@@ -107,11 +107,14 @@ static void mmain(
     noc_async_write_barrier();
 
     uint64_t end = timestamp();
-    uint64_t delta = (end - start) / 1350000;
+    uint64_t deltams = (end - start) / 1350000;
+    float bandwidth = readbytes * 1000. / deltams;
+    bandwidth /= 1 << 30;
 
     DPRINT << end << " kernel: " << kernel_id;
     DPRINT << " Read " << readbytes << " bytes from dram in " << num_iter;
-    DPRINT << " iterations, took " << delta << " ms" << ENDL();
+    DPRINT << " iterations, took " << deltams << " ms";
+    DPRINT << " at bw: " << bandwidth << ENDL();
 }
 
 void kernel_main() {
