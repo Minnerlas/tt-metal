@@ -44,10 +44,10 @@ int main() {
         MeshCommandQueue& cq = mesh_device->mesh_command_queue();
 
         const uint64_t num_dram_channels = 8;
-        const uint32_t num_l1_buffers = 20;  // 256 / 8;
-        constexpr uint32_t num_iter = 1024 / 8;
+        const uint32_t num_l1_buffers = 2;  // 256 / 8;
+        constexpr uint32_t num_iter = 1024;
         constexpr uint32_t num_tiles = 1024;
-        constexpr uint32_t elements_per_tile = (16 << 10) / sizeof(uint32_t);
+        constexpr uint32_t elements_per_tile = MiB / 4 / sizeof(uint32_t);
         // constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT * 8;
         constexpr uint32_t tile_size_bytes = sizeof(uint32_t) * elements_per_tile;
         constexpr uint32_t dram_buffer_size = tile_size_bytes * num_tiles;

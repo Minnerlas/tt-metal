@@ -6,7 +6,7 @@
 
 #include "api/debug/dprint.h"
 
-static void read_from_dram(uint64_t* total, uint32_t dram_addr, uint32_t l1_addr, uint32_t sz) {
+static void read_from_dram(uint64_t* total, uint64_t dram_addr, uint32_t l1_addr, uint32_t sz) {
     noc_async_read(dram_addr, l1_addr, sz);
     *total += sz;
 }
