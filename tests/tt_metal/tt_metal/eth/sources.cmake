@@ -5,6 +5,7 @@ set(UNIT_TESTS_ETH_SRC
     test_basic_eth.cpp
     test_buffer_movement_kernels.cpp
     test_erisc_app_direct_send.cpp
+    test_erisc_app_direct_send_bandwidth.cpp
     test_eth_multi_txq_rxq.cpp
     test_ring_gather_kernels.cpp
 )
