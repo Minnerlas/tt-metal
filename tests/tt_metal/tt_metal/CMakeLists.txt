@@ -55,6 +55,7 @@ set_target_properties(
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/api)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/data_movement)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/debug_tools)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deployment)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/device)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dispatch)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/eth)
@@ -77,6 +78,7 @@ add_custom_target(
         unit_tests_api
         unit_tests_data_movement
         unit_tests_debug_tools
+        unit_tests_deployment
         unit_tests_inspector
         unit_tests_device
         unit_tests_dispatch
