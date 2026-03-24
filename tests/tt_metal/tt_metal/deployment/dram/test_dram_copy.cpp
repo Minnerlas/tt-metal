@@ -33,7 +33,7 @@ static bool run_test_dram_copy(
 
     DataMovementProcessor processor = DataMovementProcessor::RISCV_0;
 
-    uint32_t dram_start_addr = 0x500000u;
+    uint32_t dram_start_addr = 0xfe800000u;
     uint32_t dram_end_addr = 0xff000000u;
     // uint32_t dram_end_addr = dram_start_addr + (2 << 10);
     TT_FATAL(dram_end_addr > dram_start_addr, "End address must be greater than start address");
