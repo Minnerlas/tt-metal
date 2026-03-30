@@ -6,6 +6,7 @@ set(UNIT_TESTS_DEPLOYMENT_SRC
     dram/dram_base.cpp
     dram/test_dram_copy.cpp
     dram/test_dram.cpp
+    dram/test_dram_host_readback.cpp
     eth/test_eth_bandwidth_bidir.cpp
     eth/test_eth_bandwidth.cpp
     eth/test_eth_data_integrity_dram.cpp
