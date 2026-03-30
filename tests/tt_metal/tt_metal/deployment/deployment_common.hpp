@@ -14,6 +14,7 @@ struct l1_allocator {
 
 #define ALIGNMENT 64  // TODO
 
+[[maybe_unused]]
 static inline struct l1_allocator new_tensix_allocator() {
     using namespace tt::tt_metal;
 
@@ -29,6 +30,7 @@ static inline struct l1_allocator new_tensix_allocator() {
     };
 }
 
+[[maybe_unused]]
 static inline struct l1_allocator new_erisc_allocator() {
     using namespace tt::tt_metal;
 
@@ -44,6 +46,7 @@ static inline struct l1_allocator new_erisc_allocator() {
     };
 }
 
+[[maybe_unused]]
 static inline uint32_t l1_alloc(struct l1_allocator* alloc, uint32_t size, uint32_t alignment = ALIGNMENT) {
     uint32_t start = ROUND_UP(alloc->start, alignment);
 
@@ -54,6 +57,7 @@ static inline uint32_t l1_alloc(struct l1_allocator* alloc, uint32_t size, uint3
     return start;
 }
 
+[[maybe_unused]]
 static uint64_t read_l1_u64(tt::tt_metal::IDevice* const device, const CoreCoord& core, uint64_t l1_addr) {
     auto delta_vec = tt::tt_metal::MetalContext::instance().get_cluster().read_core<uint32_t>(
         device->id(), device->worker_core_from_logical_core(core), l1_addr, 2 * sizeof(uint32_t));
@@ -61,6 +65,7 @@ static uint64_t read_l1_u64(tt::tt_metal::IDevice* const device, const CoreCoord
     return (uint64_t)delta_vec[0] | ((uint64_t)delta_vec[1] << 32);
 }
 
+[[maybe_unused]]
 static uint64_t read_eth_l1_u64(tt::tt_metal::IDevice* const device, const CoreCoord& core, uint64_t l1_addr) {
     auto delta_vec = tt::tt_metal::MetalContext::instance().get_cluster().read_core<uint32_t>(
         device->id(), device->ethernet_core_from_logical_core(core), l1_addr, 2 * sizeof(uint32_t));
@@ -86,6 +91,7 @@ public:
     ~SignalGuard() { signal(signum, prev); }
 };
 
+[[maybe_unused]]
 static bool bandwidth_check(
     tt::tt_metal::IDevice* const send_device,
     const CoreCoord& send_core,
@@ -106,6 +112,7 @@ static bool bandwidth_check(
     return pass;
 }
 
+[[maybe_unused]]
 static bool dram_data_check(
     tt::tt_metal::IDevice* const recv_device,
     uint32_t dram_start_addr,
