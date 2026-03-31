@@ -97,6 +97,7 @@ static bool run_test_dram_copy(
     bool pass = true;
     pass &= bandwidth_check(device, core, delta_addr, total_transferred, threshold);
     pass &= dram_data_check(device, dram_start_addr, dram_end_addr, dst_bank, inputs);
+    pass &= dram_data_check(device, dram_start_addr, dram_end_addr, src_bank, inputs);
 
     return pass;
 }
