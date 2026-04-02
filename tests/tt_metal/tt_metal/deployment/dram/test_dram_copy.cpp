@@ -23,7 +23,7 @@ using namespace tt;
 using namespace tt::test_utils;
 
 template <typename FIXTURE>
-static bool run_test_dram_copy(
+static bool run_test_dram_copy_dram_dram(
     FIXTURE* fixture,
     const std::shared_ptr<distributed::MeshDevice>& mesh_device,
     uint32_t src_bank,
@@ -42,7 +42,7 @@ static bool run_test_dram_copy(
     uint64_t total_transferred = dram_end_addr - dram_start_addr;
     TT_FATAL(total_transferred % transfer_size == 0, "Total transfer must be a multiple of transfer size");
 
-    uint32_t c = 123;
+    uint32_t c = 0xaaeeaaee;
     size_t wordcount = total_transferred / sizeof(uint32_t);
     vector<uint32_t> inputs, zeros(wordcount);
     inputs.reserve(wordcount);
@@ -102,7 +102,155 @@ static bool run_test_dram_copy(
     return pass;
 }
 
-TEST_F(UnitMeshCQProgramFixture, TensixDeploymentDramCopy) {
+template <typename FIXTURE>
+static bool run_test_dram_copy_dram_l1(
+    FIXTURE* fixture,
+    const std::shared_ptr<distributed::MeshDevice>& mesh_device,
+    uint32_t dst_bank,
+    int x,
+    int y,
+    uint32_t seed) {
+    /* ================= */
+    auto* const device = mesh_device->get_devices()[0];
+
+    DataMovementProcessor processor = DataMovementProcessor::RISCV_0;
+
+    uint32_t dram_end_addr = 0xff000000u;
+    uint32_t dram_start_addr = dram_end_addr - (1 << 19);
+    TT_FATAL(dram_end_addr > dram_start_addr, "End address must be greater than start address");
+
+    uint32_t transfer_size = 256 * 1024;
+    uint64_t total_transferred = dram_end_addr - dram_start_addr;
+    TT_FATAL(total_transferred % transfer_size == 0, "Total transfer must be a multiple of transfer size");
+
+    uint32_t c = 123 + seed;
+    size_t wordcount = total_transferred / sizeof(uint32_t);
+    vector<uint32_t> inputs, zeros(wordcount);
+    inputs.reserve(wordcount);
+    for (long i = 0; i < wordcount; i++) {
+        inputs.push_back(c++);
+    }
+
+    detail::WriteToDeviceDRAMChannel(device, dst_bank, dram_start_addr, inputs);
+
+    struct l1_allocator alloc = new_tensix_allocator();
+
+    uint32_t buffer0 = l1_alloc(&alloc, total_transferred);
+    uint32_t delta_addr = l1_alloc(&alloc, sizeof(uint64_t));
+
+    auto zero_coord = distributed::MeshCoordinate(0, 0);
+    auto device_range = distributed::MeshCoordinateRange(zero_coord, zero_coord);
+    CoreCoord core(x, y);
+    tt::tt_metal::MetalContext::instance().get_cluster().write_core(
+        device->id(), device->worker_core_from_logical_core(core), zeros, buffer0);
+
+    distributed::MeshWorkload workload;
+    tt_metal::Program program = tt_metal::Program();
+
+    auto kernel_config = tt_metal::DataMovementConfig{
+        .processor = processor,
+        .noc = tt_metal::NOC::NOC_0,
+        .compile_args = {
+            dram_start_addr,
+            dram_end_addr,
+            transfer_size,
+            delta_addr,
+            buffer0,
+            dst_bank,
+        }};
+
+    auto kernel = tt_metal::CreateKernel(
+        program, "tests/tt_metal/tt_metal/deployment/kernels/dram_copy_dram_l1.cpp", core, kernel_config);
+
+    tt_metal::SetRuntimeArgs(program, kernel, core, {});
+
+    workload.add_program(device_range, std::move(program));
+
+    fixture->RunProgram(mesh_device, workload, true);
+    fixture->FinishCommands(mesh_device);
+
+    double threshold = BANDWIDTH_DRAM_COPY;
+
+    bool pass = true;
+    pass &= bandwidth_check(device, core, delta_addr, total_transferred, threshold);
+    pass &= dram_data_check(device, dram_start_addr, dram_end_addr, dst_bank, inputs);
+    pass &= l1_data_check(device, core, buffer0, total_transferred, inputs);
+
+    return pass;
+}
+
+template <typename FIXTURE>
+static bool run_test_dram_copy_l1_dram(
+    FIXTURE* fixture, const std::shared_ptr<distributed::MeshDevice>& mesh_device, uint32_t dst_bank) {
+    /* ================= */
+    auto* const device = mesh_device->get_devices()[0];
+
+    DataMovementProcessor processor = DataMovementProcessor::RISCV_0;
+
+    uint32_t dram_end_addr = 0xff000000u;
+    uint32_t dram_start_addr = dram_end_addr - (1 << 19);
+    TT_FATAL(dram_end_addr > dram_start_addr, "End address must be greater than start address");
+
+    uint32_t transfer_size = 256 * 1024;
+    uint64_t total_transferred = dram_end_addr - dram_start_addr;
+    TT_FATAL(total_transferred % transfer_size == 0, "Total transfer must be a multiple of transfer size");
+
+    uint32_t c = 123;
+    size_t wordcount = total_transferred / sizeof(uint32_t);
+    vector<uint32_t> inputs, zeros(wordcount);
+    inputs.reserve(wordcount);
+    for (long i = 0; i < wordcount; i++) {
+        inputs.push_back(c++);
+    }
+
+    detail::WriteToDeviceDRAMChannel(device, dst_bank, dram_start_addr, zeros);
+
+    struct l1_allocator alloc = new_tensix_allocator();
+
+    uint32_t buffer0 = l1_alloc(&alloc, total_transferred);
+    uint32_t delta_addr = l1_alloc(&alloc, sizeof(uint64_t));
+
+    auto zero_coord = distributed::MeshCoordinate(0, 0);
+    auto device_range = distributed::MeshCoordinateRange(zero_coord, zero_coord);
+    CoreCoord core(5, 5);
+    tt::tt_metal::MetalContext::instance().get_cluster().write_core(
+        device->id(), device->worker_core_from_logical_core(core), inputs, buffer0);
+
+    distributed::MeshWorkload workload;
+    tt_metal::Program program = tt_metal::Program();
+
+    auto kernel_config = tt_metal::DataMovementConfig{
+        .processor = processor,
+        .noc = tt_metal::NOC::NOC_0,
+        .compile_args = {
+            dram_start_addr,
+            dram_end_addr,
+            transfer_size,
+            delta_addr,
+            buffer0,
+            dst_bank,
+        }};
+
+    auto kernel = tt_metal::CreateKernel(
+        program, "tests/tt_metal/tt_metal/deployment/kernels/dram_copy_l1_dram.cpp", core, kernel_config);
+
+    tt_metal::SetRuntimeArgs(program, kernel, core, {});
+
+    workload.add_program(device_range, std::move(program));
+
+    fixture->RunProgram(mesh_device, workload, true);
+    fixture->FinishCommands(mesh_device);
+
+    double threshold = BANDWIDTH_DRAM_COPY;
+
+    bool pass = true;
+    pass &= bandwidth_check(device, core, delta_addr, total_transferred, threshold);
+    pass &= dram_data_check(device, dram_start_addr, dram_end_addr, dst_bank, inputs);
+
+    return pass;
+}
+
+TEST_F(UnitMeshCQProgramFixture, TensixDeploymentDramCopyDramDram) {
     bool pass = true;
 
     SignalGuard g(SIGINT, handle_sigint);
@@ -119,12 +267,62 @@ TEST_F(UnitMeshCQProgramFixture, TensixDeploymentDramCopy) {
                     return;
                 }
 
-                if (0 && i == j) {
-                    continue;  // TODO
-                }
-
                 log_info(tt::LogTest, "  sending from bank {} to bank {}", i, j);
-                pass &= run_test_dram_copy(this, mesh_device, i, j);
+                pass &= run_test_dram_copy_dram_dram(this, mesh_device, i, j);
+            }
+        }
+    }
+
+    ASSERT_TRUE(pass);
+}
+
+TEST_F(UnitMeshCQProgramFixture, TensixDeploymentDramCopyL1Dram) {
+    bool pass = true;
+
+    SignalGuard g(SIGINT, handle_sigint);
+
+    for (const auto& mesh_device : devices_) {
+        auto* const device = mesh_device->get_devices()[0];
+        log_info(tt::LogTest, "device id: {}", device->id());
+
+        const int num_banks = device->num_dram_channels();
+        for (int i = 0; i < num_banks; i++) {
+            if (g_stop_requested.load()) {
+                GTEST_SKIP() << "Test interrupted by user after current test finished.";
+                return;
+            }
+
+            log_info(tt::LogTest, "  sending to bank {}", i);
+            pass &= run_test_dram_copy_l1_dram(this, mesh_device, i);
+        }
+    }
+
+    ASSERT_TRUE(pass);
+}
+
+TEST_F(UnitMeshCQProgramFixture, TensixDeploymentDramCopyDramL1) {
+    bool pass = true;
+
+    SignalGuard g(SIGINT, handle_sigint);
+
+    for (const auto& mesh_device : devices_) {
+        auto* const device = mesh_device->get_devices()[0];
+        log_info(tt::LogTest, "device id: {}", device->id());
+
+        const int num_banks = device->num_dram_channels();
+        for (int i = 0; i < num_banks; i++) {
+            log_info(tt::LogTest, "  sending to bank {}", i);
+
+            for (int x = 0; x < 8; x++) {
+                for (int y = 0; y < 8; y++) {
+                    if (g_stop_requested.load()) {
+                        GTEST_SKIP() << "Test interrupted by user after current test finished.";
+                        return;
+                    }
+
+                    log_info(tt::LogTest, "core {} {}", x, y);
+                    pass &= run_test_dram_copy_dram_l1(this, mesh_device, i, x, y, x * 1337 + y);
+                }
             }
         }
     }
