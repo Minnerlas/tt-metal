@@ -220,14 +220,14 @@ TEST_F(UnitMeshCQProgramFixture, TensixDeploymentEthernetDataIntegrityDram) {
                     continue;
                 }
 
-                if (g_stop_requested.load()) {
-                    GTEST_SKIP() << "Test interrupted by user after current test finished.";
-                    return;
-                }
-
                 log_info(tt::LogTest, "  sender core: {}, receiver core: {}", sender_core, receiver_core);
                 for (uint32_t erisc_idx = 0; erisc_idx < num_eriscs; erisc_idx++) {
                     const auto processor = static_cast<DataMovementProcessor>(erisc_idx);
+
+                    if (g_stop_requested.load()) {
+                        GTEST_SKIP() << "Test interrupted by user after current test finished.";
+                        return;
+                    }
 
                     log_info(tt::LogTest, "    running on {}", processor);
                     pass &= run_test_integrity_dram(
