@@ -125,7 +125,7 @@ static bool dram_data_check(
 
     tt::tt_metal::detail::ReadFromDeviceDRAMChannel(
         recv_device, dram_bank_id, dram_start_addr, total_transferred, outputs);
-    log_info(tt::LogTest, "      Read {} bytes", outputs.size() * sizeof(uint32_t));
+    log_info(tt::LogTest, "      Read {} bytes from bank {}", outputs.size() * sizeof(uint32_t), dram_bank_id);
     TT_FATAL(inputs.size() == outputs.size(), "Input and output vector sizes must match");
 
     uint64_t total_mismatches = 0;
@@ -138,8 +138,39 @@ static bool dram_data_check(
                     dram_start_addr + i * sizeof(uint32_t));
             }
             total_mismatches++;
-            // log_critical(tt::LogTest, "      Input and output data don't match at {:x}: {:x} {:x}", i, inputs[i],
-            // 		outputs[i]);
+        }
+    }
+    if (total_mismatches) {
+        log_critical(tt::LogTest, "      Total mismatches: {} words", total_mismatches);
+    }
+
+    return !total_mismatches;
+}
+
+[[maybe_unused]]
+static bool l1_data_check(
+    tt::tt_metal::IDevice* const recv_device,
+    const CoreCoord& recv_core,
+    uint32_t l1_buf_base,
+    uint32_t l1_buf_size,
+    std::vector<uint32_t>& inputs) {
+    /* ==================== */
+    auto outputs = tt::tt_metal::MetalContext::instance().get_cluster().read_core(
+        recv_device->id(), recv_device->worker_core_from_logical_core(recv_core), l1_buf_base, l1_buf_size);
+
+    log_info(tt::LogTest, "      Read {} bytes from l1 at {}", outputs.size() * sizeof(uint32_t), recv_core);
+    TT_FATAL(inputs.size() == outputs.size(), "Input and output vector sizes must match");
+
+    uint64_t total_mismatches = 0;
+    for (long i = 0; i < inputs.size(); i++) {
+        if (inputs[i] != outputs[i]) {
+            if (!total_mismatches) {
+                log_critical(
+                    tt::LogTest,
+                    "      Input and output data don't match starting at: {:x}",
+                    l1_buf_base + i * sizeof(uint32_t));
+            }
+            total_mismatches++;
         }
     }
     if (total_mismatches) {
